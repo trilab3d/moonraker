@@ -106,6 +106,8 @@ class FileManager:
         self.queue_gcodes: bool = config.getboolean('queue_gcode_uploads', False)
         self.check_klipper_path = config.getboolean("check_klipper_config_path", True)
 
+        self.metadata_scan_in_progress = 0
+
         # Register file management endpoints
         self.server.register_endpoint(
             "/server/files/list", RequestType.GET, self._handle_filelist_request
@@ -115,6 +117,9 @@ class FileManager:
         )
         self.server.register_endpoint(
             "/server/files/metascan", RequestType.POST, self._handle_metascan_request
+        )
+        self.server.register_endpoint(
+            "/server/files/metascan_pending", RequestType.GET, self._handle_metascan_pending
         )
         self.server.register_endpoint(
             "/server/files/dir_metascan", RequestType.POST, self._handle_dir_metascan_request
@@ -461,11 +466,22 @@ class FileManager:
             metadata['filename'] = requested_file
             return metadata
 
+    async def _handle_metascan_pending(
+        self, web_request: WebRequest
+    ):
+        return {
+            "metascan_pending": self.metadata_scan_in_progress > 0
+        }
+
     async def _handle_dir_metascan_request(
         self, web_request: WebRequest
     ):
-        path: str = web_request.get_str('path')
-        await self._scan_metadata_recursive(path)
+        try:
+            self.metadata_scan_in_progress += 1
+            path: str = web_request.get_str('path')
+            await self._scan_metadata_recursive(path)
+        finally:
+            self.metadata_scan_in_progress -= 1
 
     async def _scan_metadata_recursive(self, path):
         abs_path = pathlib.Path(self.file_paths["gcodes"]).joinpath(path)
