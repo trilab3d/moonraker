@@ -617,10 +617,10 @@ class MoonrakerDatabase:
         req_type = web_request.get_request_type()
         is_debug = web_request.get_endpoint().startswith("/debug/")
         namespace = web_request.get_str("namespace")
-        if namespace in self.forbidden_namespaces and not is_debug:
-            raise self.server.error(
-                f"Read/Write access to namespace '{namespace}' is forbidden", 403
-            )
+        #if namespace in self.forbidden_namespaces and not is_debug:
+        #    raise self.server.error(
+        #        f"Read/Write access to namespace '{namespace}' is forbidden", 403
+        #    )
         if req_type == RequestType.GET:
             key = web_request.get("key", None)
             if key is not None and not isinstance(key, (list, str)):
@@ -630,10 +630,10 @@ class MoonrakerDatabase:
                 )
             val = await self.get_item(namespace, key)
         else:
-            if namespace in self.protected_namespaces and not is_debug:
-                raise self.server.error(
-                    f"Write access to namespace '{namespace}' is forbidden", 403
-                )
+            #if namespace in self.protected_namespaces and not is_debug:
+            #    raise self.server.error(
+            #        f"Write access to namespace '{namespace}' is forbidden", 403
+            #    )
             key = web_request.get("key")
             if not isinstance(key, (list, str)):
                 raise self.server.error(
