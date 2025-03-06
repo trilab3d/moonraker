@@ -43,7 +43,7 @@ class LocalQueueHandler(logging.handlers.QueueHandler):
             self.handleError(record)
 
 # Timed Rotating File Handler, based on Klipper's implementation
-class MoonrakerLoggingHandler(logging.handlers.TimedRotatingFileHandler):
+class MoonrakerLoggingHandler(logging.handlers.RotatingFileHandler):
     def __init__(self, app_args: Dict[str, Any], **kwargs) -> None:
         super().__init__(app_args['log_file'], **kwargs)
         self.app_args = app_args
@@ -93,7 +93,7 @@ class LogManager:
         if log_file:
             try:
                 self.file_hdlr = MoonrakerLoggingHandler(
-                    app_args, when='midnight', backupCount=2)
+                    app_args, maxBytes=10_485_760, backupCount=2)
                 formatter = logging.Formatter(
                     '%(asctime)s [%(filename)s:%(funcName)s()] - %(message)s')
                 self.file_hdlr.setFormatter(formatter)
