@@ -117,6 +117,9 @@ class FileManager:
             "/server/files/metascan", RequestType.POST, self._handle_metascan_request
         )
         self.server.register_endpoint(
+            "/server/files/dir_metascan", RequestType.POST, self._handle_dir_metascan_request
+        )
+        self.server.register_endpoint(
             "/server/files/thumbnails", RequestType.GET, self._handle_list_thumbs
         )
         self.server.register_endpoint(
@@ -457,6 +460,32 @@ class FileManager:
                     f"Failed to parse metadata for file '{requested_file}'", 500)
             metadata['filename'] = requested_file
             return metadata
+
+    async def _handle_dir_metascan_request(
+        self, web_request: WebRequest
+    ):
+        path: str = web_request.get_str('path')
+        await self._scan_metadata_recursive(path)
+
+    async def _scan_metadata_recursive(self, path):
+        abs_path = pathlib.Path(self.file_paths["gcodes"]).joinpath(path)
+        logging.info(f"Scanning metadata for {path} ({abs_path})")
+        if os.path.isfile(abs_path):
+            if path.endswith(".g") or path.endswith(".gcode"):
+                logging.info(f"is gcode")
+                path_info = self.get_path_info(abs_path, "gcodes")
+                evt = self.gcode_metadata.parse_metadata(path, path_info)
+                await evt.wait()
+                logging.info(f"\tmetadata: {self.gcode_metadata.get(path,None)}")
+            else:
+                logging.info(f"Not gcode")
+        elif os.path.isdir(abs_path):
+            logging.info(f"is directory")
+            for node in os.listdir(abs_path):
+                logging.info(f"Recursing to {node}")
+                await self._scan_metadata_recursive(os.path.join(path,node))
+        else:
+            logging.info(f"not supported type")
 
     async def _handle_list_roots(
         self, web_request: WebRequest
