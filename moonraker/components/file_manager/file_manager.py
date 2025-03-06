@@ -201,6 +201,7 @@ class FileManager:
             self.register_directory("config_examples", example_cfg_path)
             docs_path = os.path.join(klipper_path, "docs")
             self.register_directory("docs", docs_path)
+            self.register_data_folder("profiles",full_access=True)
 
         # Register log path
         log_file = paths.get('log_file')
