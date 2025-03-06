@@ -83,11 +83,11 @@ class DbusManager:
                                err_msg: str = ""
                                ) -> bool:
         if self.polkit is None:
-            self.server.add_warning(
-                "Unable to find DBus PolKit Interface, this suggests PolKit "
-                "is not installed on your OS.",
-                "dbus_polkit"
-            )
+            #self.server.add_warning(
+            #    "Unable to find DBus PolKit Interface, this suggests PolKit "
+            #    "is not installed on your OS.",
+            #    "dbus_polkit"
+            #)
             return False
         try:
             ret = await self.polkit.call_check_authorization(  # type: ignore
