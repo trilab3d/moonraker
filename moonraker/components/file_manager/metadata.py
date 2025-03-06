@@ -292,6 +292,12 @@ class BaseSlicer(object):
     def parse_nozzle_diameter(self) -> Optional[float]:
         return None
 
+    def parse_filament_notes(self) -> Optional[str]:
+        return None
+
+    def parse_printer_model(self) -> Optional[str]:
+        return None
+
 class UnknownSlicer(BaseSlicer):
     def parse_first_layer_height(self) -> Optional[float]:
         return regex_find_min_float(r"G1\sZ(%F)\s", self.header_data)
@@ -428,6 +434,16 @@ class PrusaSlicer(BaseSlicer):
 
     def parse_layer_count(self) -> Optional[int]:
         return regex_find_int(r"; total layers count = (%D)", self.footer_data)
+
+    def parse_filament_notes(self) -> Optional[str]:
+        return regex_find_string(
+            r";\sfilament_notes\s=\s(%S)", self.footer_data
+        )
+
+    def parse_printer_model(self) -> Optional[str]:
+        return regex_find_string(
+            r";\sprinter_model\s=\s(%S)", self.footer_data
+        )
 
 class Slic3rPE(PrusaSlicer):
     def check_identity(self, data: str) -> bool:
@@ -941,7 +957,9 @@ SUPPORTED_DATA = [
     'filament_type',
     'filament_total',
     'filament_weight_total',
-    'thumbnails'
+    'thumbnails',
+    'filament_notes',
+    'printer_model'
 ]
 
 PPC_REGEX = (
