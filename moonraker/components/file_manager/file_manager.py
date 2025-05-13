@@ -479,17 +479,22 @@ class FileManager:
         try:
             self.metadata_scan_in_progress += 1
             path: str = web_request.get_str('path')
-            await self._scan_metadata_recursive(path)
+            force: str = web_request.get_boolean('force', False)
+            await self._scan_metadata_recursive(path, force)
         finally:
             self.metadata_scan_in_progress -= 1
 
-    async def _scan_metadata_recursive(self, path):
+    async def _scan_metadata_recursive(self, path, force_rescan):
         abs_path = pathlib.Path(self.file_paths["gcodes"]).joinpath(path)
         logging.info(f"Scanning metadata for {path} ({abs_path})")
         if os.path.isfile(abs_path):
             if path.endswith(".g") or path.endswith(".gcode"):
                 logging.info(f"is gcode")
                 path_info = self.get_path_info(abs_path, "gcodes")
+                if force_rescan:
+                    ret = self.gcode_metadata.remove_file_metadata(path)
+                    if ret is not None:
+                        await ret
                 evt = self.gcode_metadata.parse_metadata(path, path_info)
                 await evt.wait()
                 logging.info(f"\tmetadata: {self.gcode_metadata.get(path,None)}")
@@ -499,7 +504,7 @@ class FileManager:
             logging.info(f"is directory")
             for node in os.listdir(abs_path):
                 logging.info(f"Recursing to {node}")
-                await self._scan_metadata_recursive(os.path.join(path,node))
+                await self._scan_metadata_recursive(os.path.join(path,node), force_rescan)
         else:
             logging.info(f"not supported type")
 
@@ -2452,6 +2457,7 @@ class MetadataStorage:
                         fname: str,
                         path_info: Dict[str, Any]
                         ) -> bool:
+        logging.info(f"_has_valid_data called. fname: {fname}, path_info: {path_info}")
         if path_info.get('ufp_path', None) is not None:
             # UFP files always need processing
             return False
