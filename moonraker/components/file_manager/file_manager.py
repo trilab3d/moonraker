@@ -23,6 +23,7 @@ from inotify_simple import flags as iFlags
 from ...utils import source_info
 from ...utils import json_wrapper as jsonw
 from ...common import RequestType, TransportType
+import honeybee_gcode_reader
 
 # Annotation imports
 from typing import (
@@ -62,6 +63,11 @@ METADATA_SCRIPT = os.path.abspath(os.path.join(
 WATCH_FLAGS = iFlags.CREATE | iFlags.DELETE | iFlags.MODIFY \
     | iFlags.MOVED_TO | iFlags.MOVED_FROM | iFlags.ONLYDIR \
     | iFlags.CLOSE_WRITE
+
+honeybee_metadata_backend = honeybee_gcode_reader.MetadataBackend(
+    metadata_cache_path = pathlib.Path("/home/trilab/printer_data/gcode-metadata"),
+    gcode_base_path = pathlib.Path("/home/trilab/printer_data/gcodes"),
+)
 
 class FileManager:
     def __init__(self, config: ConfigHelper) -> None:
@@ -163,6 +169,7 @@ class FileManager:
 
         config.get('log_path', None, deprecate=True)
         self.register_data_folder("logs")
+        self.register_data_folder("gcode-metadata")
         gc_path = self.register_data_folder("gcodes", full_access=True)
         if gc_path.is_dir():
             prune: bool = True
@@ -433,38 +440,31 @@ class FileManager:
                                        web_request: WebRequest
                                        ) -> Dict[str, Any]:
         requested_file: str = web_request.get_str('filename')
-        metadata: Optional[Dict[str, Any]]
-        metadata = self.gcode_metadata.get(requested_file, None)
-        if metadata is None:
+        requested_file_full = honeybee_metadata_backend.gcode_base_path.joinpath(requested_file)
+        try:
+            metadata = honeybee_metadata_backend.get_metadata(requested_file_full)
+            metadata = metadata.to_moonraker_legacy()
+            metadata['filename'] = requested_file
+            return metadata
+        except Exception as e:
+            logging.exception(e)
             raise self.server.error(
                 f"Metadata not available for <{requested_file}>", 404)
-        metadata['filename'] = requested_file
-        return metadata
 
     async def _handle_metascan_request(
         self, web_request: WebRequest
     ) -> Dict[str, Any]:
-        async with self.sync_lock:
-            requested_file: str = web_request.get_str('filename')
-            gcpath = pathlib.Path(self.file_paths["gcodes"]).joinpath(requested_file)
-            if not gcpath.is_file():
-                raise self.server.error(f"File '{requested_file}' does not exist", 404)
-            if gcpath.suffix not in VALID_GCODE_EXTS:
-                raise self.server.error(f"File {gcpath} is not a valid gcode file")
-            # remove metadata and force a rescan
-            ret = self.gcode_metadata.remove_file_metadata(requested_file)
-            if ret is not None:
-                await ret
-            path_info = self.get_path_info(gcpath, "gcodes")
-            evt = self.gcode_metadata.parse_metadata(requested_file, path_info)
-            await evt.wait()
-            metadata: Optional[Dict[str, Any]]
-            metadata = self.gcode_metadata.get(requested_file, None)
-            if metadata is None:
-                raise self.server.error(
-                    f"Failed to parse metadata for file '{requested_file}'", 500)
+        requested_file: str = web_request.get_str('filename')
+        requested_file_full = honeybee_metadata_backend.gcode_base_path.joinpath(requested_file)
+        try:
+            metadata = honeybee_metadata_backend.parse_metadata(requested_file_full)
+            metadata = metadata.to_moonraker_legacy()
             metadata['filename'] = requested_file
             return metadata
+        except Exception as e:
+            logging.exception(e)
+            raise self.server.error(
+                    f"Failed to parse metadata for file '{requested_file}'", 500)
 
     async def _handle_metascan_pending(
         self, web_request: WebRequest
@@ -480,33 +480,10 @@ class FileManager:
             self.metadata_scan_in_progress += 1
             path: str = web_request.get_str('path')
             force: str = web_request.get_boolean('force', False)
-            await self._scan_metadata_recursive(path, force)
+            path_full = honeybee_metadata_backend.gcode_base_path.joinpath(path)
+            honeybee_metadata_backend.parse_metadata(path_full, force)
         finally:
             self.metadata_scan_in_progress -= 1
-
-    async def _scan_metadata_recursive(self, path, force_rescan):
-        abs_path = pathlib.Path(self.file_paths["gcodes"]).joinpath(path)
-        logging.info(f"Scanning metadata for {path} ({abs_path})")
-        if os.path.isfile(abs_path):
-            if path.endswith(".g") or path.endswith(".gcode"):
-                logging.info(f"is gcode")
-                path_info = self.get_path_info(abs_path, "gcodes")
-                if force_rescan:
-                    ret = self.gcode_metadata.remove_file_metadata(path)
-                    if ret is not None:
-                        await ret
-                evt = self.gcode_metadata.parse_metadata(path, path_info)
-                await evt.wait()
-                logging.info(f"\tmetadata: {self.gcode_metadata.get(path,None)}")
-            else:
-                logging.info(f"Not gcode")
-        elif os.path.isdir(abs_path):
-            logging.info(f"is directory")
-            for node in os.listdir(abs_path):
-                logging.info(f"Recursing to {node}")
-                await self._scan_metadata_recursive(os.path.join(path,node), force_rescan)
-        else:
-            logging.info(f"not supported type")
 
     async def _handle_list_roots(
         self, web_request: WebRequest
